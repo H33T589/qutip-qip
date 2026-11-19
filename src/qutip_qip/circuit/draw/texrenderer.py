@@ -9,8 +9,9 @@ from typing import Callable
 
 from qutip_qip.circuit import QubitCircuit
 from qutip_qip.circuit.draw._control_flow import infer_classical_controls
+from qutip_qip.circuit.draw.base_renderer import apply_showarg
 from qutip_qip.operations import gates as std
-from qutip_qip.operations import Gate, Measurement
+from qutip_qip.operations import Measurement, Unitary
 
 
 # As a general note wherever you see {{}} in a python rf string that represents a {}
@@ -43,11 +44,11 @@ class TeXRenderer:
         self._pdflatex = self._find_system_command(["pdflatex"])
         self._pdfcrop = self._find_system_command(["pdfcrop"])
 
-    def _gate_label(self, gate) -> str:
+    def _gate_label(self, gate, style=None) -> str:
         gate_label = gate.latex_str
-        if gate.is_parametric and gate.arg_label is not None:
-            return rf"{gate_label}({gate.arg_label})"
-        return rf"{gate_label}"
+        # if gate.is_parametric and gate.arg_label is not None:
+        #     return rf"{gate_label}({gate.arg_label})"
+        return apply_showarg(gate_label, gate, style, latex=True)
 
     def latex_code(self) -> str:
         """
@@ -67,16 +68,17 @@ class TeXRenderer:
             op = op_instruction.op
             qubits = op_instruction.qreg
             cbits = op_instruction.creg
+            style = op_instruction.style
 
-            if isinstance(op, Gate) or (isinstance(op, type) and issubclass(op, Gate)):
+            if isinstance(op, Unitary):
                 cbits = tuple(sorted(set(cbits).union(classical_controls[index])))
                 gate = op
                 targets = qubits
                 controls = []
 
                 if gate.is_controlled:
-                    controls = qubits[: gate.num_ctrl_qubits]
-                    targets = qubits[gate.num_ctrl_qubits :]
+                    controls = qubits[: gate.num_ctrl_qreg]
+                    targets = qubits[gate.num_ctrl_qreg :]
 
                 col = []
                 _swap_processing = False
@@ -102,10 +104,12 @@ class TeXRenderer:
                                 # No new line is added in the process
                                 col.append(
                                     rf" \multigate{{{len(targets) - 1}}}"
-                                    rf"{{{self._gate_label(gate)}}} "
+                                    rf"{{{self._gate_label(gate, style)}}} "
                                 )
                             else:
-                                col.append(rf" \ghost{{{self._gate_label(gate)}}} ")
+                                col.append(
+                                    rf" \ghost{{{self._gate_label(gate, style)}}} "
+                                )
 
                         elif gate == std.CX:
                             col.append(r" \targ ")
@@ -120,7 +124,7 @@ class TeXRenderer:
                         elif gate == std.TOFFOLI:
                             col.append(r" \targ ")
                         else:
-                            col.append(rf" \gate{{{self._gate_label(gate)}}} ")
+                            col.append(rf" \gate{{{self._gate_label(gate, style)}}} ")
 
                     elif n in controls:
                         control_tag = (-1 if self.reverse_states else 1) * (
@@ -137,9 +141,7 @@ class TeXRenderer:
                     else:
                         col.append(r" \qw ")
 
-            elif isinstance(op, Measurement) or (
-                isinstance(op, type) and issubclass(op, Measurement)
-            ):
+            elif isinstance(op, Measurement):
                 col = []
 
                 for n in range(self.num_qubits + self.num_cbits):
